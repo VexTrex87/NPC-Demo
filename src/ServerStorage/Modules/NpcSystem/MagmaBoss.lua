@@ -9,6 +9,8 @@ type CONFIGURATION = {
         TimeoutDistance: Number,
         DirectLineOfSightDistance: Number,
         PovY: Number,
+        FireDamage: Number,
+        FireDamageDelay: Number,
         AgentParameters: {
             AgentRadius: Number,
             AgentHeight: Number,
@@ -41,6 +43,8 @@ local CONFIGURATION: CONFIGURATION = {
         TimeoutDistance = 10,
         DirectLineOfSightDistance = 100,
         PovY = 5,
+        FireDamage = 5,
+        FireDamageDelay = 1,
         AgentParameters = {
             AgentRadius = 8,
             AgentHeight = 10,
@@ -69,11 +73,13 @@ local Workspace: Workspace = game:GetService("Workspace")
 local Players: Players = game:GetService("Players")
 local ServerStorage: ServerStorage = game:GetService("ServerStorage")
 local PathfindingService: PathfindingService = game:GetService("PathfindingService")
+local Debris: Debris = game:GetService("Debris")
 
 local core: Folder = ServerStorage.Modules.Core
 local newTween: Function = require(core.NewTween)
 local newThread: Function = require(core.NewThread)
 local getMagnitude: Function = require(core.GetMagnitude)
+local getCharacterFromBodyPart: Function = require(core.GetCharacterFromBodyPart)
 
 local debrisStorage: Folder = Workspace.Debris
 local npcObjects: Folder = ServerStorage.Objects.NpcSystem.MagmaBoss
@@ -166,10 +172,27 @@ function module:createLavaPool(hitPosition: Position): nil
     )
     newLavaPool.Position = hitPosition + CONFIGURATION.LavaPool.HitOffset
     newLavaPool.Rotation = Vector3.new(0, math.random(0, 90), 0)
-    newLavaPool.FireCore.Rate = CONFIGURATION.LavaPool.MinParticleRate
+    newLavaPool.Fire.Rate = CONFIGURATION.LavaPool.MinParticleRate
     newLavaPool.Parent = debrisStorage.Trash
     
-    newTween(newLavaPool.FireCore, CONFIGURATION.LavaPool.ShrinkTweenInfo, {Rate = CONFIGURATION.LavaPool.MinParticleRate})
+    newLavaPool.Touched:Connect(function(object: BasePart): nil
+        local character: Model = getCharacterFromBodyPart(object)
+        if character and Players:GetPlayerFromCharacter(character) then
+            local humanoidRootPart: MeshPart = character.HumanoidRootPart
+            if not humanoidRootPart:FindFirstChild("Fire") then
+                local newFire = npcObjects.Effects.LavaPool.Fire:Clone()
+                newFire.Parent = humanoidRootPart
+                Debris:AddItem(newFire, CONFIGURATION.NPC.FireDuration)
+
+                while newFire.Parent ~= nil do
+                    character.Humanoid:TakeDamage(CONFIGURATION.NPC.FireDamage)
+                    wait(CONFIGURATION.NPC.FireDamageDelay)
+                end
+            end
+        end
+    end)
+
+    newTween(newLavaPool.Fire, CONFIGURATION.LavaPool.ShrinkTweenInfo, {Rate = CONFIGURATION.LavaPool.MinParticleRate})
     newTween(newLavaPool, CONFIGURATION.LavaPool.ShrinkTweenInfo, {Size = CONFIGURATION.LavaPool.EndSize}).Completed:Wait()
     newLavaPool:Destroy()
 end
