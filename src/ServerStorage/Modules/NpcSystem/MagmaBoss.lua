@@ -153,14 +153,20 @@ end
 
 function module.new(NPC: Model): nil
     local humanoid: Humanoid = NPC.Humanoid
+    local humanoidRootPart: MeshPart = NPC.HumanoidRootPart
 
     local self: SELF_TYPE = setmetatable({
         Character = NPC,
         Humanoid = humanoid,
-        HumanoidRootPart = NPC.HumanoidRootPart,
+        HumanoidRootPart = humanoidRootPart,
         Animations = {
             Walking = humanoid.Animator:LoadAnimation(npcObjects.Animations.Walk),
             Flying = humanoid.Animator:LoadAnimation(npcObjects.Animations.Fly)
+        },
+        Sounds = {
+            Footsteps = humanoidRootPart.Footsteps,
+            Thrust = humanoidRootPart.Thrust,
+            Explosion = humanoidRootPart.Explosion,
         },
         Temporary = {
             FlyCooldown = os.time(),
@@ -171,6 +177,7 @@ function module.new(NPC: Model): nil
     }, module)
 
     self.Animations.Walking:GetMarkerReachedSignal("FootHitGound"):Connect(function(value: String): nil
+        self.Sounds.Footsteps:Play()
         local bodyPart: MeshPart = value == "LeftFoot" and self.Character.LeftFoot or self.Character.RightFoot
         self:createLavaPool(findFloor(bodyPart))
     end)
@@ -220,6 +227,8 @@ function module:createLavaPool(hitPosition: Vector3): nil
                 local newFire = npcObjects.Effects.LavaPool.Fire:Clone()
                 newFire.Parent = humanoidRootPart
                 Debris:AddItem(newFire, CONFIGURATION.NPC.FireDuration)
+
+                newFire.Fire:Play()
 
                 while newFire.Parent ~= nil do
                     character.Humanoid:TakeDamage(CONFIGURATION.Effects.LavaPool.FireDamage)
@@ -321,6 +330,7 @@ function module:fly(): nil
     bodyPosition.Position = self.HumanoidRootPart.Position + CONFIGURATION.Abilities.Fly.MaxHeight
     bodyPosition.MaxForce = CONFIGURATION.Abilities.Fly.MaxForce
 
+    self.Sounds.Thrust:Play()
     self.Character.LeftFoot.Thrust.Enabled = true
     self.Character.RightFoot.Thrust.Enabled = true
 
@@ -329,6 +339,7 @@ function module:fly(): nil
     bodyPosition.MaxForce = Vector3.new(0, 0, 0)
     self.Character.LeftFoot.Thrust.Enabled = false
     self.Character.RightFoot.Thrust.Enabled = false
+    self.Sounds.Thrust:Stop()
 
     self.Humanoid:GetPropertyChangedSignal("FloorMaterial"):Wait()
     self.Animations.Flying:Stop()
@@ -360,6 +371,8 @@ function module:createShockwave(hitPosition: Vector3): nil
     explosionEffect.Position = origin
     explosionEffect.Visible = false
     explosionEffect.Parent = debrisStorage.Trash
+
+    self.Sounds.Explosion:Play()
 
     for _: nil, player: Players in pairs(Players:GetPlayers()) do
         local character = player.Character
