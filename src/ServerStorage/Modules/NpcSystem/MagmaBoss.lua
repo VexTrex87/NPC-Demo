@@ -1,41 +1,66 @@
 local module = {}
 module.__index = module
 
-type CONFIGURATION = {
+type CONFIGURATION_TYPE = {
     NPC: {
-        UpdateDelay: Number,
-        JumpDelay: Number,
-        DetectionDistance: Number,
-        TimeoutDistance: Number,
-        DirectLineOfSightDistance: Number,
-        PovY: Number,
-        FireDamage: Number,
-        FireDamageDelay: Number,
+        UpdateDelay: number,
+        JumpDelay: number,
+        DetectionDistance: number,
+        TimeoutDistance: number,
+        DirectLineOfSightDistance: number,
+        PovY: number,
         AgentParameters: {
-            AgentRadius: Number,
-            AgentHeight: Number,
-            AgentCanJump: Boolean,
+            AgentRadius: number,
+            AgentHeight: number,
+            AgentCanJump: boolean,
+        }
+    },
+    Abilities: {
+        Fly: {
+            Cooldown: number,
+            RequiredDistance: number,
+            Chance: number,
+            MaxHeight: Vector3,
+            MaxForce: Vector3,
+            FlyDuration: number,
+            FlyDelay: number,
         },
     },
-    Shockwave: {
-        StartSize: Vector3,
-        EndSize: Vector3,
-        HitOffset: Vector3,
-        SizeTweenInfo: TweenInfo,
-        FadeTweenInfo: TweenInfo,
-    },
-    LavaPool: {
-        MinStartSize: Vector3,
-        MaxStartSize: Vector3,
-        MinParticleRate: Number,
-        MaxParticleRate: Number,
-        EndSize: Vector3,
-        HitOffset: Vector3,
-        ShrinkTweenInfo: TweenInfo,
+    Effects: {
+        Shockwave: {
+            StartSize: Vector3,
+            EndSize: Vector3,
+            HitOffset: Vector3,
+            SizeTweenInfo: TweenInfo,
+            FadeTweenInfo: TweenInfo,
+        },
+        LavaPool: {
+            MinStartSize: Vector3,
+            MaxStartSize: Vector3,
+            MinParticleRate: number,
+            MaxParticleRate: number,
+            EndSize: Vector3,
+            HitOffset: Vector3,
+            ShrinkTweenInfo: TweenInfo,
+            FireDamage: number,
+            FireDamageDelay: number,
+        },
     },
 }
 
-local CONFIGURATION: CONFIGURATION = {
+type SELF_TYPE = {
+    Character: Model,
+    Humanoid: MeshPart,
+    HumanoidRootPart: MeshPart,
+    Animations: {
+        [string]: AnimationTrack,
+    },
+    Temporary: {
+        [string]: any,
+    },
+}
+
+local CONFIGURATION: CONFIGURATION_TYPE = {
     NPC = {
         UpdateDelay = 0.5,
         JumpDelay = 1,
@@ -43,29 +68,42 @@ local CONFIGURATION: CONFIGURATION = {
         TimeoutDistance = 10,
         DirectLineOfSightDistance = 100,
         PovY = 5,
-        FireDamage = 5,
-        FireDamageDelay = 1,
         AgentParameters = {
             AgentRadius = 8,
             AgentHeight = 10,
             AgentCanJump = true,
         }
     },
-    Shockwave = {
-        StartSize = Vector3.new(0, 0, 0),
-        EndSize = Vector3.new(10, 0.5, 10),
-        HitOffset = Vector3.new(0, 0.5, 0),
-        SizeTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
-        FadeTweenInfo = TweenInfo.new(1, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+    Abilities = {
+        Fly = {
+            Cooldown = 10,
+            RequiredDistance = 30,
+            Chance = 1,
+            MaxHeight = Vector3.new(0, 50, 0),
+            MaxForce = Vector3.new(0, 100000, 0),
+            FlyDuration = 6,
+            FlyDelay = 1.5,
+        },
     },
-    LavaPool = {
-        MinStartSize = Vector3.new(8, 0.5, 8),
-        MaxStartSize = Vector3.new(15, 0.5, 15),
-        MinParticleRate = 3,
-        MaxParticleRate = 10,
-        EndSize = Vector3.new(0, 0.5, 0),
-        HitOffset = Vector3.new(0, 0.3, 0),
-        ShrinkTweenInfo = TweenInfo.new(15, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+    Effects = {
+        Shockwave = {
+            StartSize = Vector3.new(0, 0, 0),
+            EndSize = Vector3.new(100, 0.5, 100),
+            HitOffset = Vector3.new(0, 0.5, 0),
+            SizeTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+            FadeTweenInfo = TweenInfo.new(1, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+        },
+        LavaPool = {
+            MinStartSize = Vector3.new(8, 0.5, 8),
+            MaxStartSize = Vector3.new(15, 0.5, 15),
+            MinParticleRate = 3,
+            MaxParticleRate = 10,
+            EndSize = Vector3.new(0, 0.5, 0),
+            HitOffset = Vector3.new(0, 0.3, 0),
+            ShrinkTweenInfo = TweenInfo.new(15, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+            FireDamage = 5,
+            FireDamageDelay = 1,
+        },
     },
 }
 
@@ -88,7 +126,7 @@ local function findFloor(origin: BasePart): Vector3
     local direction: Vector3 = Vector3.new(0, -100, 0) 
     
 	local raycastParameters: RaycastParams = RaycastParams.new()
-	raycastParameters.FilterDescendantsInstances = {origin.Parent}
+	raycastParameters.FilterDescendantsInstances = {debrisStorage}
     raycastParameters.FilterType = Enum.RaycastFilterType.Blacklist
     
 	local hit = Workspace:Raycast(origin.Position, direction, raycastParameters)
@@ -103,17 +141,25 @@ end
 function module.new(NPC: Model): nil
     local humanoid: Humanoid = NPC.Humanoid
 
-    local self = setmetatable({
+    local self: SELF_TYPE = setmetatable({
         Character = NPC,
         Humanoid = humanoid,
         HumanoidRootPart = NPC.HumanoidRootPart,
         Animations = {
-            Walking = humanoid.Animator:LoadAnimation(npcObjects.Animations.Walk)
-        }
+            Walking = humanoid.Animator:LoadAnimation(npcObjects.Animations.Walk),
+            Flying = humanoid.Animator:LoadAnimation(npcObjects.Animations.Fly)
+        },
+        Temporary = {
+            FlyCooldown = os.time(),
+            States = {
+                Flying = false,
+            }
+        },
     }, module)
 
     self.Animations.Walking:GetMarkerReachedSignal("FootHitGound"):Connect(function(value: String): nil
-        self:showFootstepEffects(value == "LeftFoot" and self.Character.LeftFoot or self.Character.RightFoot)
+        local bodyPart: MeshPart = value == "LeftFoot" and self.Character.LeftFoot or self.Character.RightFoot
+        self:createLavaPool(findFloor(bodyPart))
     end)
 
     self.Humanoid.Running:Connect(function(speed: Number)
@@ -130,49 +176,27 @@ function module.new(NPC: Model): nil
 end
 
 function module:startRunningAnimation(speed: Number): nil
-    if speed > 0 then
+    if speed > 0 and not self.Temporary.States.Flying then
         self.Animations.Walking:Play(0.1, 1, 0.5)
     else
         self.Animations.Walking:Stop()
     end
 end
 
-function module:showFootstepEffects(bodypart: MeshPart): nil
-    local hitPosition: Vector3 = findFloor(bodypart)
-    if hitPosition then	
-        newThread(function()
-            self:createShockwave(hitPosition)
-        end)
-
-        newThread(function()
-            self:createLavaPool(hitPosition)
-        end)
+function module:createLavaPool(hitPosition: Vector3): nil
+    if not hitPosition then
+        return
     end
-end
 
-function module:createShockwave(hitPosition: Position): nil
-    local newShockwave = npcObjects.Effects.Shockwave:Clone()
-    newShockwave.Size = CONFIGURATION.Shockwave.StartSize
-    newShockwave.Position = hitPosition + CONFIGURATION.Shockwave.HitOffset
-    newShockwave.Rotation = Vector3.new(0, math.random(0, 90), 0)
-    newShockwave.Parent = debrisStorage.Trash
-    
-    newTween(newShockwave, CONFIGURATION.Shockwave.SizeTweenInfo, {Size = CONFIGURATION.Shockwave.EndSize})
-    wait(CONFIGURATION.Shockwave.SizeTweenInfo.Time - 0.3)
-    newTween(newShockwave, CONFIGURATION.Shockwave.FadeTweenInfo, {Transparency = 1}).Completed:Wait()
-    newShockwave:Destroy()
-end
-
-function module:createLavaPool(hitPosition: Position): nil
     local newLavaPool = npcObjects.Effects.LavaPool:Clone()
     newLavaPool.Size = Vector3.new(
-        math.random(CONFIGURATION.LavaPool.MinStartSize.X, CONFIGURATION.LavaPool.MaxStartSize.X),
-        CONFIGURATION.LavaPool.MinStartSize.Y,
-        math.random(CONFIGURATION.LavaPool.MinStartSize.Z, CONFIGURATION.LavaPool.MaxStartSize.Z)
+        math.random(CONFIGURATION.Effects.LavaPool.MinStartSize.X, CONFIGURATION.Effects.LavaPool.MaxStartSize.X),
+        CONFIGURATION.Effects.LavaPool.MinStartSize.Y,
+        math.random(CONFIGURATION.Effects.LavaPool.MinStartSize.Z, CONFIGURATION.Effects.LavaPool.MaxStartSize.Z)
     )
-    newLavaPool.Position = hitPosition + CONFIGURATION.LavaPool.HitOffset
+    newLavaPool.Position = hitPosition + CONFIGURATION.Effects.LavaPool.HitOffset
     newLavaPool.Rotation = Vector3.new(0, math.random(0, 90), 0)
-    newLavaPool.Fire.Rate = CONFIGURATION.LavaPool.MinParticleRate
+    newLavaPool.Fire.Rate = CONFIGURATION.Effects.LavaPool.MinParticleRate
     newLavaPool.Parent = debrisStorage.Trash
     
     newLavaPool.Touched:Connect(function(object: BasePart): nil
@@ -185,15 +209,15 @@ function module:createLavaPool(hitPosition: Position): nil
                 Debris:AddItem(newFire, CONFIGURATION.NPC.FireDuration)
 
                 while newFire.Parent ~= nil do
-                    character.Humanoid:TakeDamage(CONFIGURATION.NPC.FireDamage)
-                    wait(CONFIGURATION.NPC.FireDamageDelay)
+                    character.Humanoid:TakeDamage(CONFIGURATION.Effects.LavaPool.FireDamage)
+                    wait(CONFIGURATION.Effects.LavaPool.FireDamageDelay)
                 end
             end
         end
     end)
 
-    newTween(newLavaPool.Fire, CONFIGURATION.LavaPool.ShrinkTweenInfo, {Rate = CONFIGURATION.LavaPool.MinParticleRate})
-    newTween(newLavaPool, CONFIGURATION.LavaPool.ShrinkTweenInfo, {Size = CONFIGURATION.LavaPool.EndSize}).Completed:Wait()
+    newTween(newLavaPool.Fire, CONFIGURATION.Effects.LavaPool.ShrinkTweenInfo, {Rate = CONFIGURATION.Effects.LavaPool.MinParticleRate})
+    newTween(newLavaPool, CONFIGURATION.Effects.LavaPool.ShrinkTweenInfo, {Size = CONFIGURATION.Effects.LavaPool.EndSize}).Completed:Wait()
     newLavaPool:Destroy()
 end
 
@@ -253,6 +277,8 @@ function module:followTarget(target: MeshPart): nil
                 self:followTarget(target)
                 return
             end
+
+            self:attack(target)
         end
     else
         -- find another path
@@ -260,6 +286,60 @@ function module:followTarget(target: MeshPart): nil
         self:followTarget(target)
         return
     end
+end
+
+function module:attack(target: MeshPart): nil
+    if 
+        os.time() - self.Temporary.FlyCooldown >= CONFIGURATION.Abilities.Fly.Cooldown and
+        getMagnitude(self.HumanoidRootPart, target) <= CONFIGURATION.Abilities.Fly.RequiredDistance and
+        math.random(CONFIGURATION.Abilities.Fly.Chance) == 1 
+    then
+        self:fly()
+    end
+end
+
+function module:fly(): nil
+    self.Temporary.States.Flying = true
+    self.Animations.Walking:Stop()
+    wait(CONFIGURATION.Abilities.Fly.FlyDelay)
+    self.Animations.Flying:Play()
+
+    local bodyPosition: BodyPosition = self.HumanoidRootPart.BodyPosition
+    bodyPosition.Position = self.HumanoidRootPart.Position + CONFIGURATION.Abilities.Fly.MaxHeight
+    bodyPosition.MaxForce = CONFIGURATION.Abilities.Fly.MaxForce
+
+    self.Character.LeftFoot.Thrust.Enabled = true
+    self.Character.RightFoot.Thrust.Enabled = true
+
+    wait(CONFIGURATION.Abilities.Fly.FlyDuration)
+
+    bodyPosition.MaxForce = Vector3.new(0, 0, 0)
+    self.Character.LeftFoot.Thrust.Enabled = false
+    self.Character.RightFoot.Thrust.Enabled = false
+
+    self.Humanoid:GetPropertyChangedSignal("FloorMaterial"):Wait()
+    self.Animations.Flying:Stop()
+    self:createShockwave(findFloor(self.HumanoidRootPart))
+    wait(CONFIGURATION.Abilities.Fly.FlyDelay)
+    self.Temporary.States.Flying = false
+    self.Temporary.FlyCooldown = os.time()
+end
+
+function module:createShockwave(hitPosition: Vector3): nil
+    if not hitPosition then
+        return
+    end
+
+    local newShockwave = npcObjects.Effects.Shockwave:Clone()
+    newShockwave.Size = CONFIGURATION.Effects.Shockwave.StartSize
+    newShockwave.Position = hitPosition + CONFIGURATION.Effects.Shockwave.HitOffset
+    newShockwave.Rotation = Vector3.new(0, math.random(0, 90), 0)
+    newShockwave.Parent = debrisStorage.Trash
+    
+    newTween(newShockwave, CONFIGURATION.Effects.Shockwave.SizeTweenInfo, {Size = CONFIGURATION.Effects.Shockwave.EndSize})
+    wait(CONFIGURATION.Effects.Shockwave.SizeTweenInfo.Time - 0.3)
+    newTween(newShockwave, CONFIGURATION.Effects.Shockwave.FadeTweenInfo, {Transparency = 1}).Completed:Wait()
+    newShockwave:Destroy()
 end
 
 return module
