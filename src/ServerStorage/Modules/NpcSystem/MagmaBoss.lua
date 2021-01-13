@@ -22,11 +22,7 @@ type CONFIGURATION_TYPE = {
             Chance: number,
             MaxHeight: Vector3,
             MaxForce: Vector3,
-            FlyDuration: number,
-            FlyDelay: number,
         },
-    },
-    Effects: {
         Shockwave: {
             StartSize: Vector3,
             EndSize: Vector3,
@@ -49,6 +45,20 @@ type CONFIGURATION_TYPE = {
             ShrinkTweenInfo: TweenInfo,
             FireDamage: number,
             FireDamageDelay: number,
+        },
+        FireWind: {
+            ExplosionTweenInfo: TweenInfo,
+            FadeTweenInfo: TweenInfo,
+            DespawnDelay: number,
+            Size: number,
+            Chance: number,
+            Cooldown: number,
+            RequiredDistance: number,
+        },
+        Fire: {
+            Duration: number,
+            Delay: number,
+            Despawndelay: number,
         },
     },
 }
@@ -83,14 +93,11 @@ local CONFIGURATION: CONFIGURATION_TYPE = {
         Fly = {
             Cooldown = 10,
             RequiredDistance = 30,
-            Chance = 1,
+            Chance = 10,
             MaxHeight = Vector3.new(0, 50, 0),
             MaxForce = Vector3.new(0, 100000, 0),
-            FlyDuration = 6,
-            FlyDelay = 1.5,
+            FlyDuration = 5,
         },
-    },
-    Effects = {
         Shockwave = {
             StartSize = Vector3.new(0, 0, 0),
             EndSize = Vector3.new(100, 0.5, 100),
@@ -113,6 +120,20 @@ local CONFIGURATION: CONFIGURATION_TYPE = {
             ShrinkTweenInfo = TweenInfo.new(15, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
             FireDamage = 5,
             FireDamageDelay = 1,
+        },
+        FireWind = {
+            Chance = 1,
+            ExplosionTweenInfo = TweenInfo.new(1, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+            FadeTweenInfo = TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.In),
+            DespawnDelay = 1,
+            Size = 50,
+            Cooldown = 5,
+            RequiredDistance = 20,
+        },
+        Fire = {
+            Damage = 5,
+            Delay = 1.5,
+            DespawnDelay = 5,
         },
     },
 }
@@ -170,6 +191,7 @@ function module.new(NPC: Model): nil
         },
         Temporary = {
             FlyCooldown = os.time(),
+            FireWindCooldown = os.time(),
             States = {
                 Flying = false,
             }
@@ -210,37 +232,41 @@ function module:createLavaPool(hitPosition: Vector3): nil
 
     local newLavaPool = npcObjects.Effects.LavaPool:Clone()
     newLavaPool.Size = Vector3.new(
-        math.random(CONFIGURATION.Effects.LavaPool.MinStartSize.X, CONFIGURATION.Effects.LavaPool.MaxStartSize.X),
-        CONFIGURATION.Effects.LavaPool.MinStartSize.Y,
-        math.random(CONFIGURATION.Effects.LavaPool.MinStartSize.Z, CONFIGURATION.Effects.LavaPool.MaxStartSize.Z)
+        math.random(CONFIGURATION.Abilities.LavaPool.MinStartSize.X, CONFIGURATION.Abilities.LavaPool.MaxStartSize.X),
+        CONFIGURATION.Abilities.LavaPool.MinStartSize.Y,
+        math.random(CONFIGURATION.Abilities.LavaPool.MinStartSize.Z, CONFIGURATION.Abilities.LavaPool.MaxStartSize.Z)
     )
-    newLavaPool.Position = hitPosition + CONFIGURATION.Effects.LavaPool.HitOffset
+    newLavaPool.Position = hitPosition + CONFIGURATION.Abilities.LavaPool.HitOffset
     newLavaPool.Rotation = Vector3.new(0, math.random(0, 90), 0)
-    newLavaPool.Fire.Rate = CONFIGURATION.Effects.LavaPool.MinParticleRate
+    newLavaPool.Fire.Rate = CONFIGURATION.Abilities.LavaPool.MinParticleRate
     newLavaPool.Parent = debrisStorage.Trash
-    
+
     newLavaPool.Touched:Connect(function(object: BasePart): nil
         local character: Model = getCharacterFromBodyPart(object)
         if character and Players:GetPlayerFromCharacter(character) then
-            local humanoidRootPart: MeshPart = character.HumanoidRootPart
-            if not humanoidRootPart:FindFirstChild("Fire") then
-                local newFire = npcObjects.Effects.LavaPool.Fire:Clone()
-                newFire.Parent = humanoidRootPart
-                Debris:AddItem(newFire, CONFIGURATION.NPC.FireDuration)
-
-                newFire.Fire:Play()
-
-                while newFire.Parent ~= nil do
-                    character.Humanoid:TakeDamage(CONFIGURATION.Effects.LavaPool.FireDamage)
-                    wait(CONFIGURATION.Effects.LavaPool.FireDamageDelay)
-                end
-            end
+            self:setCharacterOnFire(character)
         end
     end)
 
-    newTween(newLavaPool.Fire, CONFIGURATION.Effects.LavaPool.ShrinkTweenInfo, {Rate = CONFIGURATION.Effects.LavaPool.MinParticleRate})
-    newTween(newLavaPool, CONFIGURATION.Effects.LavaPool.ShrinkTweenInfo, {Size = CONFIGURATION.Effects.LavaPool.EndSize}).Completed:Wait()
+    newTween(newLavaPool.Fire, CONFIGURATION.Abilities.LavaPool.ShrinkTweenInfo, {Rate = CONFIGURATION.Abilities.LavaPool.MinParticleRate})
+    newTween(newLavaPool, CONFIGURATION.Abilities.LavaPool.ShrinkTweenInfo, {Size = CONFIGURATION.Abilities.LavaPool.EndSize}).Completed:Wait()
     newLavaPool:Destroy()
+end
+
+function module:setCharacterOnFire(character: Model): nil
+    local humanoidRootPart: MeshPart = character.HumanoidRootPart
+    if not humanoidRootPart:FindFirstChild("Fire") then
+        local newFire = npcObjects.Effects.LavaPool.Fire:Clone()
+        newFire.Parent = humanoidRootPart
+        Debris:AddItem(newFire, CONFIGURATION.Abilities.Fire.DespawnDelay)
+
+        newFire.Sound:Play()
+
+        while newFire.Parent ~= nil do
+            character.Humanoid:TakeDamage(CONFIGURATION.Abilities.Fire.Damage)
+            wait(CONFIGURATION.Abilities.Fire.Delay)
+        end
+    end
 end
 
 function module:findTarget(): Model
@@ -317,6 +343,12 @@ function module:attack(target: MeshPart): nil
         math.random(CONFIGURATION.Abilities.Fly.Chance) == 1 
     then
         self:fly()
+    elseif
+        os.time() - self.Temporary.FireWindCooldown >= CONFIGURATION.Abilities.FireWind.Cooldown and
+        getMagnitude(self.HumanoidRootPart, target) <= CONFIGURATION.Abilities.FireWind.RequiredDistance and
+        math.random(CONFIGURATION.Abilities.FireWind.Chance) == 1 
+    then
+        self:createFireWind()
     end
 end
 
@@ -354,20 +386,20 @@ function module:createShockwave(hitPosition: Vector3): nil
         return
     end
 
-    local origin: Vector3 = hitPosition + CONFIGURATION.Effects.Shockwave.HitOffset
+    local origin: Vector3 = hitPosition + CONFIGURATION.Abilities.Shockwave.HitOffset
 
     local newShockwave = npcObjects.Effects.Shockwave:Clone()
-    newShockwave.Size = CONFIGURATION.Effects.Shockwave.StartSize
+    newShockwave.Size = CONFIGURATION.Abilities.Shockwave.StartSize
     newShockwave.Position = origin
     newShockwave.Rotation = Vector3.new(0, math.random(0, 90), 0)
     newShockwave.Parent = debrisStorage.Trash
-    newTween(newShockwave, CONFIGURATION.Effects.Shockwave.SizeTweenInfo, {Size = CONFIGURATION.Effects.Shockwave.EndSize})
+    newTween(newShockwave, CONFIGURATION.Abilities.Shockwave.SizeTweenInfo, {Size = CONFIGURATION.Abilities.Shockwave.EndSize})
         
     local explosionEffect: Explosion = Instance.new("Explosion")
-    explosionEffect.BlastPressure = CONFIGURATION.Effects.Shockwave.BlastPressure
-    explosionEffect.DestroyJointRadiusPercent = CONFIGURATION.Effects.Shockwave.DestroyJointRadiusPercent
-    explosionEffect.BlastRadius = CONFIGURATION.Effects.Shockwave.BlastRadius
-    explosionEffect.ExplosionType = CONFIGURATION.Effects.Shockwave.ExplosionType
+    explosionEffect.BlastPressure = CONFIGURATION.Abilities.Shockwave.BlastPressure
+    explosionEffect.DestroyJointRadiusPercent = CONFIGURATION.Abilities.Shockwave.DestroyJointRadiusPercent
+    explosionEffect.BlastRadius = CONFIGURATION.Abilities.Shockwave.BlastRadius
+    explosionEffect.ExplosionType = CONFIGURATION.Abilities.Shockwave.ExplosionType
     explosionEffect.Position = origin
     explosionEffect.Visible = false
     explosionEffect.Parent = debrisStorage.Trash
@@ -378,15 +410,52 @@ function module:createShockwave(hitPosition: Vector3): nil
         local character = player.Character
         if character then
             local humanoidRootPart: MeshPart = character:FindFirstChild("HumanoidRootPart")
-            if humanoidRootPart and getMagnitude(self.HumanoidRootPart, humanoidRootPart) <= CONFIGURATION.Effects.Shockwave.ShakeDistance then
+            if humanoidRootPart and getMagnitude(self.HumanoidRootPart, humanoidRootPart) <= CONFIGURATION.Abilities.Shockwave.ShakeDistance then
                 cameraShakerRemote:FireClient(player, "Explosion")
             end
         end
     end
 
-    wait(CONFIGURATION.Effects.Shockwave.SizeTweenInfo.Time - 0.3)
-    newTween(newShockwave, CONFIGURATION.Effects.Shockwave.FadeTweenInfo, {Transparency = 1}).Completed:Wait()
+    wait(CONFIGURATION.Abilities.Shockwave.SizeTweenInfo.Time - 0.3)
+    newTween(newShockwave, CONFIGURATION.Abilities.Shockwave.FadeTweenInfo, {Transparency = 1}).Completed:Wait()
     newShockwave:Destroy()
+end
+
+function module:createFireWind(): nil
+    local fireWindEffect: Model = npcObjects.Effects.FireWind:Clone()
+    fireWindEffect.PrimaryPart.Position = self.HumanoidRootPart.Position
+    fireWindEffect.Parent = debrisStorage.Trash
+
+    Debris:AddItem(fireWindEffect, CONFIGURATION.Abilities.FireWind.DespawnDelay)
+
+    local primaryPart: BasePart = fireWindEffect.PrimaryPart
+    local primaryPartCFrame: CFrame = primaryPart.CFrame
+    local explosionTweenInfo: TweenInfo = CONFIGURATION.Abilities.FireWind.ExplosionTweenInfo
+    local fadeTweenInfo: TweenInfo = CONFIGURATION.Abilities.FireWind.FadeTweenInfo
+    local fireWindSize: number = CONFIGURATION.Abilities.FireWind.Size
+    local charactersHit: {Model} = {}
+
+    for _: nil, basePart: BasePart in pairs(fireWindEffect:GetChildren()) do
+        if basePart:IsA("BasePart") then
+            newTween(basePart, explosionTweenInfo, {Size = basePart.Size * Vector3.new(fireWindSize, 0, fireWindSize)})	
+            newTween(basePart, fadeTweenInfo, {Size = basePart.Size * Vector3.new(fireWindSize, 0, fireWindSize)})	
+
+            if basePart ~= primaryPart then					
+                local positionGoal = primaryPartCFrame.Position + (basePart.Position - primaryPartCFrame.Position) * Vector3.new(fireWindSize, 0, fireWindSize)
+                newTween(basePart, CONFIGURATION.Abilities.FireWind.ExplosionTweenInfo, {Position = positionGoal})				
+            end	
+            
+            basePart.Touched:Connect(function(object: any)
+                local character = getCharacterFromBodyPart(object)
+                if character and not table.find(charactersHit, character) then
+                    table.insert(charactersHit, character)
+                    self:setCharacterOnFire(character)
+                end
+            end)
+        end
+    end
+
+    self.Temporary.FireWindCooldown = os.time()
 end
 
 return module
