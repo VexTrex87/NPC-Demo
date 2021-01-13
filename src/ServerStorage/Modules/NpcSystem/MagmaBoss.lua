@@ -33,6 +33,11 @@ type CONFIGURATION_TYPE = {
             HitOffset: Vector3,
             SizeTweenInfo: TweenInfo,
             FadeTweenInfo: TweenInfo,
+            ShakeDistance: number,
+            BlastPressure: number,
+            DestroyJointRadiusPercent: number,
+            BlastRadius: number,
+            ExplosionType: Enum.ExplosionType,        
         },
         LavaPool: {
             MinStartSize: Vector3,
@@ -92,6 +97,11 @@ local CONFIGURATION: CONFIGURATION_TYPE = {
             HitOffset = Vector3.new(0, 0.5, 0),
             SizeTweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
             FadeTweenInfo = TweenInfo.new(1, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+            ShakeDistance = 100,
+            BlastPressure = 500000,
+            DestroyJointRadiusPercent = 0,
+            BlastRadius = 100,
+            ExplosionType = Enum.ExplosionType.NoCraters,
         },
         LavaPool = {
             MinStartSize = Vector3.new(8, 0.5, 8),
@@ -109,6 +119,7 @@ local CONFIGURATION: CONFIGURATION_TYPE = {
 
 local Workspace: Workspace = game:GetService("Workspace")
 local Players: Players = game:GetService("Players")
+local ReplicatedStorage: ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage: ServerStorage = game:GetService("ServerStorage")
 local PathfindingService: PathfindingService = game:GetService("PathfindingService")
 local Debris: Debris = game:GetService("Debris")
@@ -119,8 +130,10 @@ local newThread: Function = require(core.NewThread)
 local getMagnitude: Function = require(core.GetMagnitude)
 local getCharacterFromBodyPart: Function = require(core.GetCharacterFromBodyPart)
 
+local camera: Camera = Workspace.Camera
 local debrisStorage: Folder = Workspace.Debris
 local npcObjects: Folder = ServerStorage.Objects.NpcSystem.MagmaBoss
+local cameraShakerRemote: RemoteEvent = ReplicatedStorage.Remotes.CameraShaker
 
 local function findFloor(origin: BasePart): Vector3
     local direction: Vector3 = Vector3.new(0, -100, 0) 
@@ -330,13 +343,34 @@ function module:createShockwave(hitPosition: Vector3): nil
         return
     end
 
+    local origin: Vector3 = hitPosition + CONFIGURATION.Effects.Shockwave.HitOffset
+
     local newShockwave = npcObjects.Effects.Shockwave:Clone()
     newShockwave.Size = CONFIGURATION.Effects.Shockwave.StartSize
-    newShockwave.Position = hitPosition + CONFIGURATION.Effects.Shockwave.HitOffset
+    newShockwave.Position = origin
     newShockwave.Rotation = Vector3.new(0, math.random(0, 90), 0)
     newShockwave.Parent = debrisStorage.Trash
-    
     newTween(newShockwave, CONFIGURATION.Effects.Shockwave.SizeTweenInfo, {Size = CONFIGURATION.Effects.Shockwave.EndSize})
+        
+    local explosionEffect: Explosion = Instance.new("Explosion")
+    explosionEffect.BlastPressure = CONFIGURATION.Effects.Shockwave.BlastPressure
+    explosionEffect.DestroyJointRadiusPercent = CONFIGURATION.Effects.Shockwave.DestroyJointRadiusPercent
+    explosionEffect.BlastRadius = CONFIGURATION.Effects.Shockwave.BlastRadius
+    explosionEffect.ExplosionType = CONFIGURATION.Effects.Shockwave.ExplosionType
+    explosionEffect.Position = origin
+    explosionEffect.Visible = false
+    explosionEffect.Parent = debrisStorage.Trash
+
+    for _: nil, player: Players in pairs(Players:GetPlayers()) do
+        local character = player.Character
+        if character then
+            local humanoidRootPart: MeshPart = character:FindFirstChild("HumanoidRootPart")
+            if humanoidRootPart and getMagnitude(self.HumanoidRootPart, humanoidRootPart) <= CONFIGURATION.Effects.Shockwave.ShakeDistance then
+                cameraShakerRemote:FireClient(player, "Explosion")
+            end
+        end
+    end
+
     wait(CONFIGURATION.Effects.Shockwave.SizeTweenInfo.Time - 0.3)
     newTween(newShockwave, CONFIGURATION.Effects.Shockwave.FadeTweenInfo, {Transparency = 1}).Completed:Wait()
     newShockwave:Destroy()
