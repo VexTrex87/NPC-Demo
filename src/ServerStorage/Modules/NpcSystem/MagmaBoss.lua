@@ -94,9 +94,9 @@ local CONFIGURATION: CONFIGURATION_TYPE = {
             Cooldown = 10,
             RequiredDistance = 30,
             Chance = 10,
-            MaxHeight = Vector3.new(0, 50, 0),
+            MaxHeight = Vector3.new(0, 30, 0),
             MaxForce = Vector3.new(0, 100000, 0),
-            FlyDuration = 5,
+            FlyDuration = 1.5,
         },
         Shockwave = {
             StartSize = Vector3.new(0, 0, 0),
@@ -122,7 +122,7 @@ local CONFIGURATION: CONFIGURATION_TYPE = {
             FireDamageDelay = 1,
         },
         FireWind = {
-            Chance = 1,
+            Chance = 2,
             ExplosionTweenInfo = TweenInfo.new(1, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
             FadeTweenInfo = TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.In),
             DespawnDelay = 1,
@@ -181,8 +181,11 @@ function module.new(NPC: Model): nil
         Humanoid = humanoid,
         HumanoidRootPart = humanoidRootPart,
         Animations = {
-            Walking = humanoid.Animator:LoadAnimation(npcObjects.Animations.Walk),
-            Flying = humanoid.Animator:LoadAnimation(npcObjects.Animations.Fly)
+            Walk = humanoid.Animator:LoadAnimation(npcObjects.Animations.Walk),
+            Fly = humanoid.Animator:LoadAnimation(npcObjects.Animations.Fly),
+            Jump = humanoid.Animator:LoadAnimation(npcObjects.Animations.Jump),
+            Idle = humanoid.Animator:LoadAnimation(npcObjects.Animations.Idle),
+            Explode = humanoid.Animator:LoadAnimation(npcObjects.Animations.Explode),
         },
         Sounds = {
             Footsteps = humanoidRootPart.Footsteps,
@@ -198,15 +201,31 @@ function module.new(NPC: Model): nil
         },
     }, module)
 
-    self.Animations.Walking:GetMarkerReachedSignal("FootHitGound"):Connect(function(value: String): nil
+    self.Animations.Walk:GetMarkerReachedSignal("FootHitGound"):Connect(function(value: String): nil
         self.Sounds.Footsteps:Play()
         local bodyPart: MeshPart = value == "LeftFoot" and self.Character.LeftFoot or self.Character.RightFoot
         self:createLavaPool(findFloor(bodyPart))
     end)
 
-    self.Humanoid.Running:Connect(function(speed: Number)
+    self.Humanoid.Running:Connect(function(speed: Number): nil
         self:startRunningAnimation(speed)
     end)
+
+    self.Humanoid.Jumping:Connect(function(isJumping: boolean): nil
+        if isJumping then
+            self.Animations.Jump:Play()
+        else
+            self.Animations.Jump:Stop()
+        end
+    end)
+
+    for _: nil, basePart in pairs(self.Character:GetDescendants()) do
+		if basePart:IsA("BasePart") and basePart:CanSetNetworkOwnership() then
+			basePart:SetNetworkOwner(nil)
+		end
+    end
+
+    self.Animations.Idle:Play()
 
     while true do
         local target = self:findTarget()
@@ -219,9 +238,9 @@ end
 
 function module:startRunningAnimation(speed: Number): nil
     if speed > 0 and not self.Temporary.States.Flying then
-        self.Animations.Walking:Play(0.1, 1, 0.5)
+        self.Animations.Walk:Play(0.1, 1, 0.5)
     else
-        self.Animations.Walking:Stop()
+        self.Animations.Walk:Stop()
     end
 end
 
@@ -354,9 +373,9 @@ end
 
 function module:fly(): nil
     self.Temporary.States.Flying = true
-    self.Animations.Walking:Stop()
+    self.Animations.Walk:Stop()
     wait(CONFIGURATION.Abilities.Fly.FlyDelay)
-    self.Animations.Flying:Play()
+    self.Animations.Fly:Play()
 
     local bodyPosition: BodyPosition = self.HumanoidRootPart.BodyPosition
     bodyPosition.Position = self.HumanoidRootPart.Position + CONFIGURATION.Abilities.Fly.MaxHeight
@@ -374,7 +393,7 @@ function module:fly(): nil
     self.Sounds.Thrust:Stop()
 
     self.Humanoid:GetPropertyChangedSignal("FloorMaterial"):Wait()
-    self.Animations.Flying:Stop()
+    self.Animations.Fly:Stop()
     self:createShockwave(findFloor(self.HumanoidRootPart))
     wait(CONFIGURATION.Abilities.Fly.FlyDelay)
     self.Temporary.States.Flying = false
@@ -422,6 +441,9 @@ function module:createShockwave(hitPosition: Vector3): nil
 end
 
 function module:createFireWind(): nil
+    self.Animations.Explode:Play()
+    self.Animations.Explode:GetMarkerReachedSignal("StartExplosion"):Wait()
+
     local fireWindEffect: Model = npcObjects.Effects.FireWind:Clone()
     fireWindEffect.PrimaryPart.Position = self.HumanoidRootPart.Position
     fireWindEffect.Parent = debrisStorage.Trash
